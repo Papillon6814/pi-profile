@@ -7,7 +7,7 @@ import type {ProfileDefinition} from './catalog.ts';
 import {containedPath} from './folder-profile.ts';
 export interface CommonSkill {name:string;filePath:string}
 export interface RuntimeAgentDefinitionSubset {
- description:string;systemPrompt:string;tools?:string[];skills?:string[];skillPath?:string[];
+ description:string;systemPrompt:string;tools?:string[];mcpDirectTools?:string[];skills?:string[];skillPath?:string[];
  model?:string;thinking?:string|false;systemPromptMode:'append'|'replace';inheritProjectContext:boolean;inheritGlobalContext:boolean;inheritSkills:boolean;
  extensions?:string[];defaultContext?:'fresh'|'fork';defaultAsync?:boolean;acceptanceRole?:'read-only'|'writer';allowNestedSubagents?:boolean;allowedAgents?:string[];
 }
@@ -95,10 +95,14 @@ export function loadProfileResources(profile:ProfileDefinition,commonSkills:read
     if(typeof m.name!=='string'||! /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(m.name)||typeof m.description!=='string'||!m.description.trim()||!body.trim())throw new Error('invalid agent name/description/body');
     const name='profile.'+profile.id+'.'+m.name;
     if(names.has(name)){duplicates.add(name);throw new Error('duplicate agent name: '+name);}names.add(name);
-    const tools=list(m.tools,'tools'),skills=list(m.skills,'skills');
+    const listed=list(m.tools,'tools'),skills=list(m.skills,'skills');
+    // pi-subagents takes `mcp:server` and `mcp:server/tool` selectors as mcpDirectTools, not as tool names.
+    const mcp=listed?.filter(t=>t.startsWith('mcp:')).map(t=>t.slice(4)),tools=listed?.filter(t=>!t.startsWith('mcp:'));
+    if(mcp?.some(t=>!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)?$/.test(t)))throw new Error('invalid mcp tool selector');
     if(tools?.some(t=>t.includes('/')||t.includes('\\')||/\.(?:ts|js)$/i.test(t)))throw new Error('extension paths are not allowed in tools');
     const d:RuntimeAgentDefinitionSubset={description:m.description.trim(),systemPrompt:body.trim(),systemPromptMode:'append',inheritProjectContext:true,inheritGlobalContext:true,inheritSkills:false};
     if(tools!==undefined)d.tools=tools;
+    if(mcp?.length)d.mcpDirectTools=mcp;
     if(skills!==undefined){d.skills=skills;if(!deferAgentSkills)d.skillPath=resolveAgentSkillPaths(skills,candidates);}
     for(const key of ['inheritProjectContext','inheritGlobalContext','inheritSkills'] as const)if(m[key]!==undefined){if(typeof m[key]!=='boolean')throw new Error('invalid '+key);d[key]=m[key];}
     if(m.systemPromptMode!==undefined){if(m.systemPromptMode!=='append'&&m.systemPromptMode!=='replace')throw new Error('invalid systemPromptMode');d.systemPromptMode=m.systemPromptMode;}
